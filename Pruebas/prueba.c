@@ -1,53 +1,128 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
 
- typedef struct 
-   {
-       int size;    //Tamaño de archivo
-       uint16_t caracteristicaAdicional;
-       uint16_t reservadoCopia;
-       int offSet; //variable que almacena la posicion inicial de los datos
-   } CabeceraImg;
-   
-   typedef struct 
-   {
-       int tamCabecera; //Tamaño de la estructura de informacion de la cabeceraImg
-       int ancho;
-       int alto;    //Se resguarda ancho y alto de la imagen
-       uint16_t planos; //Cantidad de planos que contiene la imagen (planos de color)
-       uint16_t bpp;    //Cantidad de bits por pixel
-       int compresion;  //Informacion sobre la compresión 
-       int imgSize; //Tamaño real de la imagen ancho*alto
-       int resX;    //Resolución de la imagen en el eje horizontal
-       int resY;    //Resolución de la imagen en el eje vertical
-       int coloresR;    //Rango de colores posibles 2^bpp
-       int imxColores;  //Rango inicial de colores
-   } imagen;
-   
-unsigned char *cargaImagenFile(char *filename, imagen *matrizImagen)
+typedef struct bmpFileHeader
 {
-    FILE *fileImagen;
-    CabeceraImg infoImg;
-    unsigned char *imgData;     //Los pixeles como arreglo de caracteres
-    uint16_t type;
+  /* 2 bytes de identificación */
+  uint32_t size;        /* Tamaño del archivo */
+  uint16_t resv1;       /* Reservado */
+  uint16_t resv2;       /* Reservado */
+  uint32_t offset;      /* Offset hasta hasta los datos de imagen */
+} bmpFileHeader;
 
-    //Apertura del archivo de imagen 
-    fileImagen=fopen(filename, "r");
-    if(!fileImagen)
+typedef struct bmpInfoHeader
+{
+  uint32_t headersize;      /* Tamaño de la cabecera */
+  uint32_t width;       /* Ancho */
+  uint32_t height;      /* Alto */
+  uint16_t planes;          /* Planos de color (Siempre 1) */
+  uint16_t bpp;             /* bits por pixel */
+  uint32_t compress;        /* compresión */
+  uint32_t imgsize;     /* tamaño de los datos de imagen */
+  uint32_t bpmx;        /* Resolución X en bits por metro */
+  uint32_t bpmy;        /* Resolución Y en bits por metro */
+  uint32_t colors;      /* colors used en la paleta */
+  uint32_t imxtcolors;      /* Colores importantes. 0 si son todos */
+} bmpInfoHeader;
+
+unsigned char *LoadBMP(char *filename, bmpInfoHeader *bInfoHeader);
+void DisplayInfo(bmpInfoHeader *info);
+void TextDisplay(bmpInfoHeader *info, unsigned char *img);
+
+int main()
+{
+  bmpInfoHeader info;
+  unsigned char *img;
+
+  img=LoadBMP("imagen.png", &info);
+  DisplayInfo(&info);
+  TextDisplay(&info, img);
+
+  return 0;
+}
+
+void TextDisplay(bmpInfoHeader *info, unsigned char *img)
+{
+  int x, y;
+  /* Reducimos la resolución vertical y horizontal para que la imagen entre en pantalla */
+  static const int reduccionX=6, reduccionY=4;
+  /* Si la componente supera el umbral, el color se marcará como 1. */
+  static const int umbral=90;
+  /* Asignamos caracteres a los colores en pantalla */
+  static unsigned char colores[9]=" bgfrRGB";
+  int r,g,b;
+
+  /* Dibujamos la imagen */
+  for (y=info->height; y>0; y-=reduccionY)
     {
-        return NULL;
+      for (x=0; x<info->width; x+=reduccionX)
+    {
+      b=(img[3*(x+y*info->width)]>umbral);
+      g=(img[3*(x+y*info->width)+1]>umbral);
+      r=(img[3*(x+y*info->width)+2]>umbral);
+
+      printf("%c", colores[b+g*2+r*4]);
     }
-
-    fread(&type, sizeof(uint16_t),128, fileImagen);
-
-    if(type!=0x4D42) 
-    {
-        fclose(fileImagen);
-        return NULL;
+      printf("\n");
     }
 }
 
-void main(){
-    
+unsigned char *LoadBMP(char *filename, bmpInfoHeader *bInfoHeader)
+{
+
+  FILE *f;
+  bmpFileHeader header;     /* cabecera */
+  unsigned char *imgdata;   /* datos de imagen */
+  uint16_t type;        /* 2 bytes identificativos */
+
+  f=fopen (filename, "r");
+  if (!f)
+    return NULL;        /* Si no podemos leer, no hay imagen*/
+
+  /* Leemos los dos primeros bytes */
+  fread(&type, sizeof(uint16_t), 1, f);
+  if (type !=0x4D42)        /* Comprobamos el formato */
+    {
+      fclose(f);
+      return NULL;
+    }
+
+  /* Leemos la cabecera de fichero completa */
+  fread(&header, sizeof(bmpFileHeader), 1, f);
+
+  /* Leemos la cabecera de información completa */
+  fread(bInfoHeader, sizeof(bmpInfoHeader), 1, f);
+
+  /* Reservamos memoria para la imagen, ¿cuánta?
+     Tanto como indique imgsize */
+  imgdata=(unsigned char*)malloc(bInfoHeader->imgsize);
+
+  /* Nos situamos en el sitio donde empiezan los datos de imagen,
+   nos lo indica el offset de la cabecera de fichero*/
+  fseek(f, header.offset, SEEK_SET);
+
+  /* Leemos los datos de imagen, tantos bytes como imgsize */
+  fread(imgdata, bInfoHeader->imgsize,1, f);
+
+  /* Cerramos */
+  fclose(f);
+
+  /* Devolvemos la imagen */
+  return imgdata;
+}
+
+void DisplayInfo(bmpInfoHeader *info)
+{
+  printf("Tamaño de la cabecera: %u\n", info->headersize);
+  printf("Anchura: %d\n", info->width);
+  printf("Altura: %d\n", info->height);
+  printf("Planos (1): %d\n", info->planes);
+  printf("Bits por pixel: %d\n", info->bpp);
+  printf("Compresión: %d\n", info->compress);
+  printf("Tamaño de datos de imagen: %u\n", info->imgsize);
+  printf("Resolucón horizontal: %u\n", info->bpmx);
+  printf("Resolucón vertical: %u\n", info->bpmy);
+  printf("Colores en paleta: %d\n", info->colors);
+  printf("Colores importantes: %d\n", info->imxtcolors);
 }
