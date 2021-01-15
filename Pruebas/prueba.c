@@ -41,9 +41,13 @@ unsigned char *cargaImagenFile(char *filename, imagen *matrizImagen)
 
     fread(&type, sizeof(uint16_t),128, fileImagen);
 
-    if(type!=0x4D42)
+    if(type!=0x4D42) 
     {
         fclose(fileImagen);
         return NULL;
     }
+}
+
+void main(){
+    
 }
